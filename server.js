@@ -1,12 +1,13 @@
 const express = require('express');
 const cors = require('cors');
+const mongoose = require('mongoose');
+const config = require('./config');
 const routes = require('./routes');
 const errorMiddleware = require('./middleware/error.middleware');
-const mongoose = require('mongoose');
 
-require('dotenv').config();
+const app = express();
 
-mongoose.connect(process.env.MONGODB_URI, {
+mongoose.connect(config.mongoURI, {
   useNewUrlParser: true,
   useUnifiedTopology: true,
   useCreateIndex: true,
@@ -14,8 +15,6 @@ mongoose.connect(process.env.MONGODB_URI, {
 })
 .then(() => console.log('Connected to MongoDB'))
 .catch(err => console.error('MongoDB connection error:', err));
-
-const app = express();
 
 app.use(cors());
 app.use(express.json());
@@ -26,7 +25,7 @@ app.use('/api', routes);
 // Error handling middleware
 app.use(errorMiddleware);
 
-const PORT = process.env.PORT || 3000;
+const PORT = config.port;
 app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
 
 module.exports = app;

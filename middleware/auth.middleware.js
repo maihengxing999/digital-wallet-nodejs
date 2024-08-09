@@ -1,6 +1,7 @@
 const jwt = require('jsonwebtoken');
 const User = require('../models/user.model');
 const logger = require('../utils/logger');
+const config = require('../config');
 
 const authenticateJWT = async (req, res, next) => {
   try {
@@ -14,9 +15,9 @@ const authenticateJWT = async (req, res, next) => {
       return res.status(401).json({ error: 'Access denied. Invalid token format.' });
     }
 
-    const decoded = jwt.verify(token, process.env.JWT_SECRET);
+    const decoded = jwt.verify(token, config.jwtSecret);
     const user = await User.findById(decoded.id).select('-password');
-    
+
     if (!user) {
       return res.status(401).json({ error: 'Invalid token. User not found.' });
     }

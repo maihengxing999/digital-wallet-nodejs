@@ -11,7 +11,7 @@ const walletSchema = new mongoose.Schema({
     type: String,
     required: true
   }
-}, { _id: false }); // Disable _id for subdocument
+}, { _id: false });
 
 const userSchema = new mongoose.Schema({
   email: {
@@ -35,12 +35,18 @@ const userSchema = new mongoose.Schema({
     required: true,
     trim: true
   },
+  stripeCustomerId: {
+    type: String,
+    unique: true,
+    sparse: true
+  },
   wallet: walletSchema,
   createdAt: {
     type: Date,
     default: Date.now
   }
 });
+
 
 // Hash password before saving
 userSchema.pre('save', async function(next) {

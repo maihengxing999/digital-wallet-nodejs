@@ -20,6 +20,16 @@ const errorHandler = (err, req, res, next) => {
     return res.status(401).json({ error: 'Invalid token' });
   }
 
+  // Custom application errors
+  if (err.name === 'ApplicationError') {
+    return res.status(err.status || 400).json({ error: err.message });
+  }
+
+  // Stripe errors
+  if (err.type && err.type.startsWith('Stripe')) {
+    return res.status(400).json({ error: err.message });
+  }
+
   // Default to 500 server error
   res.status(500).json({ error: 'Internal Server Error' });
 };
