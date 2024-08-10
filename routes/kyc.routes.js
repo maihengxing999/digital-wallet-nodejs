@@ -1,6 +1,6 @@
 const express = require("express");
 const KYCService = require("../services/kyc.service");
-const authenticateJWT = require("../middleware/auth.middleware");
+const { authenticateJWT } = require("../middleware/auth.middleware");
 const upload = require("../middleware/file-upload.middleware");
 
 const router = express.Router();

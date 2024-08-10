@@ -1,17 +1,20 @@
-const mongoose = require('mongoose');
-const bcrypt = require('bcryptjs');
+const mongoose = require("mongoose");
+const bcrypt = require("bcryptjs");
 
-const walletSchema = new mongoose.Schema({
-  balance: {
-    type: Number,
-    default: 0,
-    min: 0
+const walletSchema = new mongoose.Schema(
+  {
+    balance: {
+      type: Number,
+      default: 0,
+      min: 0,
+    },
+    stripeCustomerId: {
+      type: String,
+      required: true,
+    },
   },
-  stripeCustomerId: {
-    type: String,
-    required: true
-  }
-}, { _id: false });
+  { _id: false }
+);
 
 const userSchema = new mongoose.Schema({
   email: {
@@ -19,47 +22,51 @@ const userSchema = new mongoose.Schema({
     required: true,
     unique: true,
     lowercase: true,
-    trim: true
+    trim: true,
   },
   password: {
     type: String,
-    required: true
+    required: true,
   },
   firstName: {
     type: String,
     required: true,
-    trim: true
+    trim: true,
   },
   lastName: {
     type: String,
     required: true,
-    trim: true
+    trim: true,
+  },
+  role: {
+    type: String,
+    enum: ["user", "admin"],
+    default: "user",
   },
   stripeCustomerId: {
     type: String,
     unique: true,
-    sparse: true
+    sparse: true,
   },
   wallet: walletSchema,
   createdAt: {
     type: Date,
-    default: Date.now
-  }
+    default: Date.now,
+  },
 });
 
-
 // Hash password before saving
-userSchema.pre('save', async function(next) {
-  if (!this.isModified('password')) return next();
+userSchema.pre("save", async function (next) {
+  if (!this.isModified("password")) return next();
   this.password = await bcrypt.hash(this.password, 12);
   next();
 });
 
 // Method to check password
-userSchema.methods.checkPassword = async function(candidatePassword) {
+userSchema.methods.checkPassword = async function (candidatePassword) {
   return await bcrypt.compare(candidatePassword, this.password);
 };
 
-const User = mongoose.model('User', userSchema);
+const User = mongoose.model("User", userSchema);
 
 module.exports = User;

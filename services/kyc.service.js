@@ -41,10 +41,10 @@ class KYCService {
 
   static async uploadDocument(userId, documentType, file) {
     let kycVerification = await KYCVerification.findOne({ user: userId });
-    // if (!kycVerification) {
-    //   // Auto-initiate KYC if not already initiated
-    //   kycVerification = await this.initiateKYC(userId);
-    // }
+    if (!kycVerification) {
+      // Auto-initiate KYC if not already initiated
+      kycVerification = await this.initiateKYC(userId);
+    }
 
     if (kycVerification.status !== "pending") {
       throw new Error("KYC verification is not in pending state");
