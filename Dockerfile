@@ -13,11 +13,17 @@ RUN npm ci --only=production
 # Copy the rest of the application code
 COPY . .
 
-# Create uploads directory and set permissions
-RUN mkdir -p /app/uploads && chown -R node:node /app/uploads
+# Create a volume for uploads
+VOLUME /app/uploads
 
-# Create a non-root user and switch to it
-USER node
+# Create a non-root user
+RUN addgroup -g 1001 -S nodejs && adduser -S nodejs -u 1001
+
+# Change ownership of the app directory to the non-root user
+RUN chown -R nodejs:nodejs /app
+
+# Switch to non-root user
+USER nodejs
 
 # Expose the port the app runs on
 EXPOSE 3000
