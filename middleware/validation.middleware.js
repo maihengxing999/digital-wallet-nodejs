@@ -8,4 +8,4 @@ const createValidationMiddleware = (validationFunction) => {
     };
   };
 
-  module.exports = createValidationMiddleware;
+module.exports = createValidationMiddleware;

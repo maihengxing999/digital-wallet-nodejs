@@ -6,7 +6,7 @@ class WalletService {
   static async createWallet(userId, email, initialBalance) {
     const existingWallet = await Wallet.findOne({ user: userId });
     if (existingWallet) {
-      throw new Error('User already has a wallet');
+      throw new Error("User already has a wallet");
     }
 
     const stripeCustomer = await StripeService.createCustomer(email);
@@ -14,13 +14,13 @@ class WalletService {
     const wallet = new Wallet({
       user: userId,
       balance: initialBalance,
-      stripeCustomerId: stripeCustomer.id
+      stripeCustomerId: stripeCustomer.id,
     });
 
     await wallet.save();
 
     if (initialBalance > 0) {
-      await this.createTransaction('deposit', initialBalance, null, wallet._id);
+      await this.createTransaction("deposit", initialBalance, null, wallet._id);
     }
 
     return wallet;
@@ -51,77 +51,108 @@ class WalletService {
       throw new Error('Deposit failed');
     }
   } */
-    static async deposit(userId, amount, paymentMethodId) {
-        const wallet = await Wallet.findOne({ user: userId });
-        if (!wallet) {
-          throw new Error('Wallet not found');
-        }
+  static async deposit(userId, amount, paymentMethodId) {
+    const wallet = await Wallet.findOne({ user: userId });
+    if (!wallet) {
+      throw new Error("Wallet not found");
+    }
 
-        try {
-          // Attach the payment method to the customer if it's not already attached
-          await StripeService.attachPaymentMethodToCustomer(paymentMethodId, wallet.stripeCustomerId);
+    try {
+      // Attach the payment method to the customer if it's not already attached
+      await StripeService.attachPaymentMethodToCustomer(
+        paymentMethodId,
+        wallet.stripeCustomerId
+      );
 
-          // Create a PaymentIntent
-          const paymentIntent = await StripeService.createPaymentIntent(amount, 'usd', wallet.stripeCustomerId);
+      // Create a PaymentIntent
+      const paymentIntent = await StripeService.createPaymentIntent(
+        amount,
+        "usd",
+        wallet.stripeCustomerId
+      );
 
-          // Confirm the PaymentIntent with the payment method
-          const confirmedPaymentIntent = await StripeService.confirmPaymentIntent(paymentIntent.id, paymentMethodId);
+      // Confirm the PaymentIntent with the payment method
+      const confirmedPaymentIntent = await StripeService.confirmPaymentIntent(
+        paymentIntent.id,
+        paymentMethodId
+      );
 
-          if (confirmedPaymentIntent.status === 'succeeded') {
-            const depositAmount = confirmedPaymentIntent.amount / 100; // Convert from cents to dollars
-            wallet.balance += depositAmount;
-            await wallet.save();
+      if (confirmedPaymentIntent.status === "succeeded") {
+        const depositAmount = confirmedPaymentIntent.amount / 100; // Convert from cents to dollars
+        wallet.balance += depositAmount;
+        await wallet.save();
 
-            await this.createTransaction('deposit', depositAmount, null, wallet._id, confirmedPaymentIntent.id);
+        await this.createTransaction(
+          "deposit",
+          depositAmount,
+          null,
+          wallet._id,
+          confirmedPaymentIntent.id
+        );
 
-            return { balance: wallet.balance, transactionId: confirmedPaymentIntent.id };
-          } else {
-            throw new Error('Deposit failed');
-          }
-        } catch (error) {
-          throw new Error(`Deposit failed: ${error.message}`);
-        }
+        return {
+          balance: wallet.balance,
+          transactionId: confirmedPaymentIntent.id,
+        };
+      } else {
+        throw new Error("Deposit failed");
       }
+    } catch (error) {
+      throw new Error(`Deposit failed: ${error.message}`);
+    }
+  }
 
   static async createPaymentIntent(userId, amount) {
     const wallet = await Wallet.findOne({ user: userId });
     if (!wallet) {
-      throw new Error('Wallet not found');
+      throw new Error("Wallet not found");
     }
 
-    const paymentIntent = await StripeService.createPaymentIntent(amount, 'usd', wallet.stripeCustomerId);
+    const paymentIntent = await StripeService.createPaymentIntent(
+      amount,
+      "usd",
+      wallet.stripeCustomerId
+    );
 
     return {
       clientSecret: paymentIntent.client_secret,
-      paymentIntentId: paymentIntent.id
+      paymentIntentId: paymentIntent.id,
     };
   }
 
   static async confirmPaymentIntent(userId, paymentIntentId) {
     const wallet = await Wallet.findOne({ user: userId });
     if (!wallet) {
-      throw new Error('Wallet not found');
+      throw new Error("Wallet not found");
     }
 
-    const paymentIntent = await StripeService.confirmPaymentIntent(paymentIntentId);
+    const paymentIntent = await StripeService.confirmPaymentIntent(
+      paymentIntentId
+    );
 
-    if (paymentIntent.status === 'succeeded') {
+    if (paymentIntent.status === "succeeded") {
       const amount = paymentIntent.amount / 100; // Convert from cents to dollars
       wallet.balance += amount;
       await wallet.save();
 
-      await this.createTransaction('deposit', amount, null, wallet._id, paymentIntent.id);
+      await this.createTransaction(
+        "deposit",
+        amount,
+        null,
+        wallet._id,
+        paymentIntent.id
+      );
 
       return { balance: wallet.balance, transactionId: paymentIntent.id };
     } else {
-      throw new Error('Payment failed');
+      throw new Error("Payment failed");
     }
   }
 
   static async getBalance(userId) {
     const wallet = await Wallet.findOne({ user: userId });
     if (!wallet) {
-      throw new Error('Wallet not found');
+      throw new Error("Wallet not found");
     }
     return { balance: wallet.balance };
   }
@@ -129,30 +160,42 @@ class WalletService {
   static async addPaymentMethod(userId, paymentMethodId) {
     const wallet = await Wallet.findOne({ user: userId });
     if (!wallet) {
-      throw new Error('Wallet not found');
+      throw new Error("Wallet not found");
     }
 
-    await StripeService.attachPaymentMethodToCustomer(paymentMethodId, wallet.stripeCustomerId);
+    await StripeService.attachPaymentMethodToCustomer(
+      paymentMethodId,
+      wallet.stripeCustomerId
+    );
 
-    return { message: 'Payment method added successfully' };
+    return { message: "Payment method added successfully" };
   }
 
   static async withdraw(userId, amount) {
     const wallet = await Wallet.findOne({ user: userId });
     if (!wallet) {
-      throw new Error('Wallet not found');
+      throw new Error("Wallet not found");
     }
 
     if (wallet.balance < amount) {
-      throw new Error('Insufficient funds');
+      throw new Error("Insufficient funds");
     }
 
-    const payout = await StripeService.createPayout(amount, wallet.stripeCustomerId);
+    const payout = await StripeService.createPayout(
+      amount,
+      wallet.stripeCustomerId
+    );
 
     wallet.balance -= amount;
     await wallet.save();
 
-    await this.createTransaction('withdraw', amount, wallet._id, null, payout.id);
+    await this.createTransaction(
+      "withdraw",
+      amount,
+      wallet._id,
+      null,
+      payout.id
+    );
 
     return { balance: wallet.balance, payoutId: payout.id };
   }
@@ -162,11 +205,11 @@ class WalletService {
     const toWallet = await Wallet.findOne({ user: toUserId });
 
     if (!fromWallet || !toWallet) {
-      throw new Error('One or both wallets not found');
+      throw new Error("One or both wallets not found");
     }
 
     if (fromWallet.balance < amount) {
-      throw new Error('Insufficient funds');
+      throw new Error("Insufficient funds");
     }
 
     fromWallet.balance -= amount;
@@ -175,7 +218,12 @@ class WalletService {
     await fromWallet.save();
     await toWallet.save();
 
-    await this.createTransaction('transfer', amount, fromWallet._id, toWallet._id);
+    await this.createTransaction(
+      "transfer",
+      amount,
+      fromWallet._id,
+      toWallet._id
+    );
 
     return { fromBalance: fromWallet.balance, toBalance: toWallet.balance };
   }
@@ -183,29 +231,109 @@ class WalletService {
   static async getTransactions(userId) {
     const wallet = await Wallet.findOne({ user: userId });
     if (!wallet) {
-      throw new Error('Wallet not found');
+      throw new Error("Wallet not found");
     }
 
     const transactions = await Transaction.find({
-      $or: [{ fromWallet: wallet._id }, { toWallet: wallet._id }]
+      $or: [{ fromWallet: wallet._id }, { toWallet: wallet._id }],
     }).sort({ createdAt: -1 });
 
     return transactions;
   }
 
-
-  static async createTransaction(type, amount, fromWalletId, toWalletId, stripePaymentIntentId = null) {
+  static async createTransaction(
+    type,
+    amount,
+    fromWalletId,
+    toWalletId,
+    stripePaymentIntentId = null
+  ) {
     const transaction = new Transaction({
       type,
       amount,
       fromWallet: fromWalletId,
       toWallet: toWalletId,
-      status: 'completed',
-      stripePaymentIntentId
+      status: "completed",
+      stripePaymentIntentId,
     });
 
     await transaction.save();
     return transaction;
+  }
+
+  static async generatePaymentQR(userId, amount) {
+    const wallet = await Wallet.findOne({ user: userId });
+    if (!wallet) {
+      throw new Error("Wallet not found");
+    }
+
+    const paymentId = crypto.randomBytes(16).toString("hex");
+
+    const qrData = JSON.stringify({
+      paymentId,
+      amount,
+      recipient: userId,
+    });
+
+    const qrCodeDataURL = await qrcode.toDataURL(qrData);
+
+    return { qrCodeDataURL, paymentId };
+  }
+
+  static async initiateQRPayment(paymentId, payerId) {
+    const transaction = await Transaction.findOne({
+      "metadata.paymentId": paymentId,
+      status: "pending",
+    });
+    if (!transaction) {
+      throw new Error("Invalid payment ID");
+    }
+
+    const payerWallet = await Wallet.findOne({ user: payerId });
+    if (!payerWallet) {
+      throw new Error("Payer wallet not found");
+    }
+
+    const paymentIntent = await StripeService.createPaymentIntent(
+      transaction.amount,
+      "usd",
+      payerWallet.stripeCustomerId
+    );
+
+    return {
+      clientSecret: paymentIntent.client_secret,
+      amount: transaction.amount,
+    };
+  }
+
+  static async confirmQRPayment(payerId, paymentIntentId) {
+    const paymentIntent = await StripeService.confirmPaymentIntent(
+      paymentIntentId
+    );
+
+    if (paymentIntent.status === "succeeded") {
+      const transaction = await Transaction.findOne({
+        stripePaymentIntentId: paymentIntentId,
+      });
+      if (!transaction) {
+        throw new Error("Transaction not found");
+      }
+
+      transaction.status = "completed";
+      await transaction.save();
+
+      const recipientWallet = await Wallet.findById(transaction.toWallet);
+      recipientWallet.balance += transaction.amount;
+      await recipientWallet.save();
+
+      const payerWallet = await Wallet.findOne({ user: payerId });
+      payerWallet.balance -= transaction.amount;
+      await payerWallet.save();
+
+      return { message: "Payment processed successfully", paymentIntentId };
+    } else {
+      throw new Error("Payment failed");
+    }
   }
 }
 

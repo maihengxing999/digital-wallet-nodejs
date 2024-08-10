@@ -74,7 +74,7 @@ USER_ID=$(echo "$REGISTER_RESPONSE" | grep -o '"id":"[^"]*' | sed 's/"id":"//g')
 echo "Extracted Token: $TOKEN"
 echo "Extracted UserId: $USER_ID"
 
-
+exit
 # Test 3: Create Wallet
 echo -e "\n${GREEN}--- Test 3: Create Wallet ---${NC}"
 CREATE_WALLET_RESPONSE=$(curl -s -X POST ${BASE_URL}/wallet/create \

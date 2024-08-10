@@ -4,7 +4,8 @@ class StripeService {
       return await stripe.customers.create({ email });
     }
 
-    /*
+    /* THIS NEED CONFIRMATION ON
+    
     static async createPaymentIntent(amount, currency, customerId) {
       return await stripe.paymentIntents.create({
         amount: amount * 100, // Convert to cents

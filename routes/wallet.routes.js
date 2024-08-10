@@ -52,43 +52,84 @@ router.post('/add-payment-method', authenticateJWT, async (req, res) => {
     }
   });
 
-  router.post('/withdraw', authenticateJWT, async (req, res) => {
-    try {
-      const { amount } = req.body;
-      const result = await WalletService.withdraw(req.user.id, amount);
-      res.json(result);
-    } catch (error) {
-      res.status(400).json({ error: error.message });
-    }
-  });
+router.post("/withdraw", authenticateJWT, async (req, res) => {
+  try {
+    const { amount } = req.body;
+    const result = await WalletService.withdraw(req.user.id, amount);
+    res.json(result);
+  } catch (error) {
+    res.status(400).json({ error: error.message });
+  }
+});
 
-  router.post('/transfer', authenticateJWT, async (req, res) => {
-    try {
-      const { toUserId, amount } = req.body;
-      const result = await WalletService.transfer(req.user.id, toUserId, amount);
-      res.json(result);
-    } catch (error) {
-      res.status(400).json({ error: error.message });
-    }
-  });
+router.post("/transfer", authenticateJWT, async (req, res) => {
+  try {
+    const { toUserId, amount } = req.body;
+    const result = await WalletService.transfer(req.user.id, toUserId, amount);
+    res.json(result);
+  } catch (error) {
+    res.status(400).json({ error: error.message });
+  }
+});
 
-  router.get('/transactions', authenticateJWT, async (req, res) => {
-    try {
-      const transactions = await WalletService.getTransactions(req.user.id);
-      res.json(transactions);
-    } catch (error) {
-      res.status(400).json({ error: error.message });
-    }
-  });
+router.get("/transactions", authenticateJWT, async (req, res) => {
+  try {
+    const transactions = await WalletService.getTransactions(req.user.id);
+    res.json(transactions);
+  } catch (error) {
+    res.status(400).json({ error: error.message });
+  }
+});
 
-  router.post('/deposit', authenticateJWT, async (req, res) => {
-    try {
-      const { amount, paymentMethodId } = req.body;
-      const result = await WalletService.deposit(req.user.id, amount, paymentMethodId);
-      res.json(result);
-    } catch (error) {
-      res.status(400).json({ error: error.message });
-    }
-  });
+router.post("/deposit", authenticateJWT, async (req, res) => {
+  try {
+    const { amount, paymentMethodId } = req.body;
+    const result = await WalletService.deposit(
+      req.user.id,
+      amount,
+      paymentMethodId
+    );
+    res.json(result);
+  } catch (error) {
+    res.status(400).json({ error: error.message });
+  }
+});
+
+router.post("/generate-qr", authenticateJWT, async (req, res) => {
+  try {
+    const { amount } = req.body;
+    const qrCode = await WalletService.generatePaymentQR(req.user.id, amount);
+    res.json(qrCode);
+  } catch (error) {
+    res.status(400).json({ error: error.message });
+  }
+});
+
+router.post("/initiate-qr-payment", authenticateJWT, async (req, res) => {
+  try {
+    const { paymentId } = req.body;
+    const result = await WalletService.initiateQRPayment(
+      paymentId,
+      req.user.id
+    );
+    res.json(result);
+  } catch (error) {
+    res.status(400).json({ error: error.message });
+  }
+});
+
+router.post("/confirm-qr-payment", authenticateJWT, async (req, res) => {
+  try {
+    const { paymentIntentId } = req.body;
+    const result = await WalletService.confirmQRPayment(
+      req.user.id,
+      paymentIntentId
+    );
+    res.json(result);
+  } catch (error) {
+    res.status(400).json({ error: error.message });
+  }
+});
+
 
 module.exports = router;
