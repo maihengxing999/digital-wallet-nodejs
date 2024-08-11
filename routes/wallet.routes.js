@@ -36,10 +36,11 @@ router.post("/create-payment-intent", authenticateJWT, async (req, res) => {
 
 router.post("/confirm-payment-intent", authenticateJWT, async (req, res) => {
   try {
-    const { paymentIntentId } = req.body;
+    const { paymentIntentId, paymentMethodId } = req.body;
     const result = await WalletService.confirmPaymentIntent(
       req.user.id,
-      paymentIntentId
+      paymentIntentId,
+      paymentMethodId
     );
     res.json(result);
   } catch (error) {

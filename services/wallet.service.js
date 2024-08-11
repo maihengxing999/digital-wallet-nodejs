@@ -133,14 +133,15 @@ class WalletService {
     };
   }
 
-  static async confirmPaymentIntent(userId, paymentIntentId) {
+  static async confirmPaymentIntent(userId, paymentIntentId, paymentMethodId) {
     const wallet = await Wallet.findOne({ user: userId });
     if (!wallet) {
       throw new Error("Wallet not found");
     }
 
     const paymentIntent = await StripeService.confirmPaymentIntent(
-      paymentIntentId
+      paymentIntentId,
+      paymentMethodId
     );
 
     if (paymentIntent.status === "succeeded") {
