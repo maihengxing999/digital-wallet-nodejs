@@ -1,4 +1,4 @@
 {
   "editor.defaultFormatter": "esbenp.prettier-vscode",
-  "cSpell.words": ["minio"]
+  "cSpell.words": ["minio", "qrcode"]
 }

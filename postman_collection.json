@@ -12,18 +12,37 @@
           "name": "Create First Admin",
           "event": [
             {
+              "listen": "prerequest",
+              "script": {
+                "exec": [
+                  "if (pm.environment.get(\"ALLOW_ADMIN_SETUP\") !== \"true\") {",
+                  "    console.log(\"Admin setup is not allowed. Skipping this request.\");",
+                  "    pm.execution.setNextRequest(null);",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            },
+            {
               "listen": "test",
               "script": {
                 "exec": [
-                  "pm.test(\"Status code is 201\", function () {",
-                  "    pm.response.to.have.status(201);",
-                  "});",
+                  "if (pm.environment.get(\"ALLOW_ADMIN_SETUP\") === \"true\") {",
+                  "    pm.test(\"Status code is 201\", function () {",
+                  "        pm.response.to.have.status(201);",
+                  "    });",
                   "",
-                  "pm.test(\"Admin user created\", function () {",
-                  "    var jsonData = pm.response.json();",
-                  "    pm.expect(jsonData.user.role).to.eql(\"admin\");",
-                  "    pm.environment.set(\"admin_token\", jsonData.token);",
-                  "});"
+                  "    pm.test(\"Admin user created\", function () {",
+                  "        var jsonData = pm.response.json();",
+                  "        pm.expect(jsonData.user.role).to.eql(\"admin\");",
+                  "        pm.environment.set(\"admin_token\", jsonData.token);",
+                  "    });",
+                  "    ",
+                  "    // Disable further admin setup",
+                  "    pm.environment.set(\"ALLOW_ADMIN_SETUP\", \"false\");",
+                  "} else {",
+                  "    console.log(\"Admin setup is not allowed. Test skipped.\");",
+                  "}"
                 ],
                 "type": "text/javascript"
               }
@@ -269,6 +288,49 @@
               "path": ["api", "kyc", "status"]
             }
           }
+        },
+        {
+          "name": "Update KYC Status (Admin)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Status code is 200\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "pm.test(\"KYC status updated successfully\", function () {",
+                  "    var jsonData = pm.response.json();",
+                  "    pm.expect(jsonData.status).to.eql(\"approved\");",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{admin_token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n    \"userId\": \"{{user_id}}\",\n    \"newStatus\": \"approved\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/kyc/update-status",
+              "host": ["{{base_url}}"],
+              "path": ["api", "kyc", "update-status"]
+            }
+          }
         }
       ]
     },
@@ -480,93 +542,6 @@
       "name": "4. Advanced Wallet Operations",
       "item": [
         {
-          "name": "Create Payment Intent",
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "exec": [
-                  "pm.test(\"Status code is 200\", function () {",
-                  "    pm.response.to.have.status(200);",
-                  "});",
-                  "",
-                  "pm.test(\"Payment Intent created\", function () {",
-                  "    var jsonData = pm.response.json();",
-                  "    pm.expect(jsonData.clientSecret).to.be.a('string');",
-                  "    pm.environment.set(\"payment_intent_id\", jsonData.id);",
-                  "});"
-                ],
-                "type": "text/javascript"
-              }
-            }
-          ],
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "Authorization",
-                "value": "Bearer {{user_token}}"
-              },
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "body": {
-              "mode": "raw",
-              "raw": "{\n    \"amount\": 50\n}"
-            },
-            "url": {
-              "raw": "{{base_url}}/api/wallet/create-payment-intent",
-              "host": ["{{base_url}}"],
-              "path": ["api", "wallet", "create-payment-intent"]
-            }
-          }
-        },
-        {
-          "name": "Confirm Payment Intent",
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "exec": [
-                  "pm.test(\"Status code is 200\", function () {",
-                  "    pm.response.to.have.status(200);",
-                  "});",
-                  "",
-                  "pm.test(\"Payment Intent confirmed\", function () {",
-                  "    var jsonData = pm.response.json();",
-                  "    pm.expect(jsonData.status).to.eql(\"succeeded\");",
-                  "});"
-                ],
-                "type": "text/javascript"
-              }
-            }
-          ],
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "Authorization",
-                "value": "Bearer {{user_token}}"
-              },
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "body": {
-              "mode": "raw",
-              "raw": "{\n    \"paymentIntentId\": \"{{payment_intent_id}}\"\n}"
-            },
-            "url": {
-              "raw": "{{base_url}}/api/wallet/confirm-payment-intent",
-              "host": ["{{base_url}}"],
-              "path": ["api", "wallet", "confirm-payment-intent"]
-            }
-          }
-        },
-        {
           "name": "Generate QR",
           "event": [
             {
@@ -625,6 +600,8 @@
                   "pm.test(\"QR Payment initiated\", function () {",
                   "    var jsonData = pm.response.json();",
                   "    pm.expect(jsonData.clientSecret).to.be.a('string');",
+                  "    pm.expect(jsonData.paymentIntentId).to.be.a('string');",
+                  "    pm.environment.set(\"payment_intent_id\", jsonData.paymentIntentId);",
                   "});"
                 ],
                 "type": "text/javascript"
@@ -645,7 +622,7 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n    \"paymentId\": \"{{qr_payment_id}}\"\n}"
+              "raw": "{\n    \"paymentId\": \"{{qr_payment_id}}\",\n    \"paymentMethodId\": \"{{payment_method_id}}\"\n}"
             },
             "url": {
               "raw": "{{base_url}}/api/wallet/initiate-qr-payment",
@@ -688,7 +665,7 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n    \"paymentIntentId\": \"{{payment_intent_id}}\"\n}"
+              "raw": "{\n    \"paymentIntentId\": \"{{payment_intent_id}}\",\n    \"paymentMethodId\": \"{{payment_method_id}}\"\n}"
             },
             "url": {
               "raw": "{{base_url}}/api/wallet/confirm-qr-payment",

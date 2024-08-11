@@ -1,9 +1,22 @@
 const Wallet = require('../models/wallet.model');
 const Transaction = require('../models/transaction.model');
 const StripeService = require('./stripe.service');
+const KYCVerification = require("../models/kyc-verification.model");
+const crypto = require("crypto");
+const qrcode = require("qrcode");
+const logger = require("../utils/logger");
 
 class WalletService {
   static async createWallet(userId, email, initialBalance) {
+    // Check KYC status first
+    const kycVerification = await KYCVerification.findOne({ user: userId });
+    if (!kycVerification || kycVerification.status !== "approved") {
+      throw new Error(
+        "KYC verification is not approved. Cannot create wallet."
+      );
+    }
+
+    // Check if user already has a wallet
     const existingWallet = await Wallet.findOne({ user: userId });
     if (existingWallet) {
       throw new Error("User already has a wallet");
@@ -241,99 +254,181 @@ class WalletService {
     return transactions;
   }
 
+  static async generatePaymentQR(userId, amount) {
+    try {
+      const wallet = await Wallet.findOne({ user: userId });
+      if (!wallet) {
+        throw new Error("Wallet not found");
+      }
+
+      const paymentId = crypto.randomBytes(16).toString("hex");
+
+      const qrData = JSON.stringify({
+        paymentId,
+        amount,
+        recipient: userId,
+      });
+
+      const qrCodeDataURL = await qrcode.toDataURL(qrData);
+
+      // Create a pending transaction
+      await this.createTransaction(
+        "transfer",
+        amount,
+        null, // fromWallet is null for QR code generation
+        wallet._id,
+        null,
+        "pending",
+        { paymentId }
+      );
+
+      return { qrCodeDataURL, paymentId };
+    } catch (error) {
+      throw new Error(`Failed to generate QR code: ${error.message}`);
+    }
+  }
+
+  static async initiateQRPayment(paymentId, payerId, paymentMethodId) {
+    logger.info(
+      `Initiating QR payment: paymentId=${paymentId}, payerId=${payerId}, paymentMethodId=${paymentMethodId}`
+    );
+
+    try {
+      if (!paymentId || !payerId || !paymentMethodId) {
+        throw new Error("Missing required parameters");
+      }
+
+      const transaction = await Transaction.findOne({
+        "metadata.paymentId": paymentId,
+        status: "pending",
+      });
+      logger.info(`Found transaction: ${JSON.stringify(transaction)}`);
+
+      if (!transaction) {
+        throw new Error("Invalid payment ID");
+      }
+
+      const payerWallet = await Wallet.findOne({ user: payerId });
+      logger.info(`Found payer wallet: ${JSON.stringify(payerWallet)}`);
+
+      if (!payerWallet) {
+        throw new Error("Payer wallet not found");
+      }
+
+      if (payerWallet.balance < transaction.amount) {
+        throw new Error("Insufficient funds");
+      }
+
+      // Set the fromWallet
+      transaction.fromWallet = payerWallet._id;
+      await transaction.save();
+      logger.info(
+        `Updated transaction with fromWallet: ${JSON.stringify(transaction)}`
+      );
+
+      // Attach the payment method to the customer if it's not already attached
+      logger.info(
+        `Attaching payment method ${paymentMethodId} to customer ${payerWallet.stripeCustomerId}`
+      );
+      await StripeService.attachPaymentMethodToCustomer(
+        paymentMethodId,
+        payerWallet.stripeCustomerId
+      );
+
+      logger.info(
+        `Creating payment intent for amount ${transaction.amount * 100} cents`
+      );
+      let paymentIntent;
+      try {
+        paymentIntent = await StripeService.createPaymentIntent(
+          transaction.amount * 100, // Convert to cents
+          "usd",
+          payerWallet.stripeCustomerId,
+          paymentMethodId
+        );
+      } catch (stripeError) {
+        logger.error(`Stripe error: ${stripeError.message}`);
+        throw new Error(`Stripe error: ${stripeError.message}`);
+      }
+      logger.info(`Created payment intent: ${JSON.stringify(paymentIntent)}`);
+
+      transaction.stripePaymentIntentId = paymentIntent.id;
+      await transaction.save();
+      logger.info(
+        `Updated transaction with stripePaymentIntentId: ${JSON.stringify(
+          transaction
+        )}`
+      );
+
+      return {
+        clientSecret: paymentIntent.client_secret,
+        amount: transaction.amount,
+        paymentIntentId: paymentIntent.id,
+        status: paymentIntent.status,
+      };
+    } catch (error) {
+      logger.error(`Error in initiateQRPayment: ${error.message}`);
+      logger.error(error.stack);
+      throw new Error(`Failed to initiate QR payment: ${error.message}`);
+    }
+  }
+
+  static async confirmQRPayment(payerId, paymentIntentId, paymentMethodId) {
+    try {
+      const paymentIntent = await StripeService.confirmPaymentIntent(
+        paymentIntentId,
+        paymentMethodId
+      );
+
+      if (paymentIntent.status === "succeeded") {
+        const transaction = await Transaction.findOne({
+          stripePaymentIntentId: paymentIntentId,
+        });
+        if (!transaction) {
+          throw new Error("Transaction not found");
+        }
+
+        transaction.status = "completed";
+        await transaction.save();
+
+        const recipientWallet = await Wallet.findById(transaction.toWallet);
+        recipientWallet.balance += transaction.amount;
+        await recipientWallet.save();
+
+        const payerWallet = await Wallet.findOne({ user: payerId });
+        payerWallet.balance -= transaction.amount;
+        await payerWallet.save();
+
+        return { message: "Payment processed successfully", paymentIntentId };
+      } else {
+        throw new Error("Payment failed");
+      }
+    } catch (error) {
+      throw new Error(`Failed to confirm QR payment: ${error.message}`);
+    }
+  }
+
   static async createTransaction(
     type,
     amount,
     fromWalletId,
     toWalletId,
-    stripePaymentIntentId = null
+    stripePaymentIntentId = null,
+    status = "completed",
+    metadata = {}
   ) {
     const transaction = new Transaction({
       type,
       amount,
       fromWallet: fromWalletId,
       toWallet: toWalletId,
-      status: "completed",
+      status,
       stripePaymentIntentId,
+      metadata,
     });
 
     await transaction.save();
     return transaction;
-  }
-
-  static async generatePaymentQR(userId, amount) {
-    const wallet = await Wallet.findOne({ user: userId });
-    if (!wallet) {
-      throw new Error("Wallet not found");
-    }
-
-    const paymentId = crypto.randomBytes(16).toString("hex");
-
-    const qrData = JSON.stringify({
-      paymentId,
-      amount,
-      recipient: userId,
-    });
-
-    const qrCodeDataURL = await qrcode.toDataURL(qrData);
-
-    return { qrCodeDataURL, paymentId };
-  }
-
-  static async initiateQRPayment(paymentId, payerId) {
-    const transaction = await Transaction.findOne({
-      "metadata.paymentId": paymentId,
-      status: "pending",
-    });
-    if (!transaction) {
-      throw new Error("Invalid payment ID");
-    }
-
-    const payerWallet = await Wallet.findOne({ user: payerId });
-    if (!payerWallet) {
-      throw new Error("Payer wallet not found");
-    }
-
-    const paymentIntent = await StripeService.createPaymentIntent(
-      transaction.amount,
-      "usd",
-      payerWallet.stripeCustomerId
-    );
-
-    return {
-      clientSecret: paymentIntent.client_secret,
-      amount: transaction.amount,
-    };
-  }
-
-  static async confirmQRPayment(payerId, paymentIntentId) {
-    const paymentIntent = await StripeService.confirmPaymentIntent(
-      paymentIntentId
-    );
-
-    if (paymentIntent.status === "succeeded") {
-      const transaction = await Transaction.findOne({
-        stripePaymentIntentId: paymentIntentId,
-      });
-      if (!transaction) {
-        throw new Error("Transaction not found");
-      }
-
-      transaction.status = "completed";
-      await transaction.save();
-
-      const recipientWallet = await Wallet.findById(transaction.toWallet);
-      recipientWallet.balance += transaction.amount;
-      await recipientWallet.save();
-
-      const payerWallet = await Wallet.findOne({ user: payerId });
-      payerWallet.balance -= transaction.amount;
-      await payerWallet.save();
-
-      return { message: "Payment processed successfully", paymentIntentId };
-    } else {
-      throw new Error("Payment failed");
-    }
   }
 }
 

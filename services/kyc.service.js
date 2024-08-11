@@ -139,6 +139,11 @@ class KYCService {
       approvedAt: kycVerification.approvedAt,
     };
   }
+
+  static async isKYCApproved(userId) {
+    const kycVerification = await KYCVerification.findOne({ user: userId });
+    return kycVerification && kycVerification.status === "approved";
+  }
 }
 
 module.exports = KYCService;

@@ -13,7 +13,11 @@ router.post("/create", authenticateJWT, async (req, res) => {
     );
     res.status(201).json(wallet);
   } catch (error) {
-    res.status(400).json({ error: error.message });
+    if (error.message.includes("KYC verification")) {
+      res.status(403).json({ error: error.message });
+    } else {
+      res.status(400).json({ error: error.message });
+    }
   }
 });
 
@@ -120,10 +124,16 @@ router.post("/generate-qr", authenticateJWT, async (req, res) => {
 
 router.post("/initiate-qr-payment", authenticateJWT, async (req, res) => {
   try {
-    const { paymentId } = req.body;
+    const { paymentId, paymentMethodId } = req.body;
+    if (!paymentId || !paymentMethodId) {
+      return res
+        .status(400)
+        .json({ error: "paymentId and paymentMethodId are required" });
+    }
     const result = await WalletService.initiateQRPayment(
       paymentId,
-      req.user.id
+      req.user.id,
+      paymentMethodId
     );
     res.json(result);
   } catch (error) {
@@ -131,12 +141,14 @@ router.post("/initiate-qr-payment", authenticateJWT, async (req, res) => {
   }
 });
 
+
 router.post("/confirm-qr-payment", authenticateJWT, async (req, res) => {
   try {
-    const { paymentIntentId } = req.body;
+    const { paymentIntentId, paymentMethodId } = req.body;
     const result = await WalletService.confirmQRPayment(
       req.user.id,
-      paymentIntentId
+      paymentIntentId,
+      paymentMethodId
     );
     res.json(result);
   } catch (error) {

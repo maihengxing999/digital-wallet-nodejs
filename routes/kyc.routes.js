@@ -1,6 +1,9 @@
 const express = require("express");
 const KYCService = require("../services/kyc.service");
-const { authenticateJWT } = require("../middleware/auth.middleware");
+const {
+  authenticateJWT,
+  authenticateAdmin,
+} = require("../middleware/auth.middleware");
 const upload = require("../middleware/file-upload.middleware");
 
 const router = express.Router();
@@ -47,7 +50,7 @@ router.get("/status", authenticateJWT, async (req, res) => {
 });
 
 // This route should be protected and only accessible by admin users
-router.put("/update-status", authenticateJWT, async (req, res) => {
+router.put("/update-status", authenticateAdmin, async (req, res) => {
   try {
     const { userId, newStatus } = req.body;
     const kycVerification = await KYCService.updateKYCStatus(userId, newStatus);
