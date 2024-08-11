@@ -1,6 +1,9 @@
 # Use the official Node.js 20 Alpine image as the base
 FROM --platform=$TARGETPLATFORM node:20-alpine
 
+# Install bash
+RUN apk add --no-cache bash
+
 # Set the working directory in the container
 WORKDIR /app
 
@@ -22,6 +25,9 @@ RUN addgroup -g 1001 -S nodejs && adduser -S nodejs -u 1001
 # Change ownership of the app directory to the non-root user
 RUN chown -R nodejs:nodejs /app
 
+# Change the shell for the non-root user to bash
+RUN sed -i 's/nodejs:x:1001:1001::/nodejs:x:1001:1001::/bin/bash:' /etc/passwd
+
 # Switch to non-root user
 USER nodejs
 
@@ -32,5 +38,5 @@ EXPOSE 3000
 ENV NODE_ENV=production \
     PORT=3000
 
-# Start the application
+# Start the application (can be overridden)
 CMD ["node", "server.js"]
