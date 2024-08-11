@@ -1,5 +1,5 @@
 # Use the official Node.js 20 Alpine image as the base
-FROM --platform=$TARGETPLATFORM node:20-alpine
+FROM node:20-alpine
 
 # Install bash
 RUN apk add --no-cache bash
@@ -26,7 +26,7 @@ RUN addgroup -g 1001 -S nodejs && adduser -S nodejs -u 1001
 RUN chown -R nodejs:nodejs /app
 
 # Change the shell for the non-root user to bash
-RUN sed -i 's/nodejs:x:1001:1001::/nodejs:x:1001:1001::/bin/bash:' /etc/passwd
+RUN sed -i 's|/bin/ash|/bin/bash|' /etc/passwd
 
 # Switch to non-root user
 USER nodejs
