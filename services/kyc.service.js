@@ -10,7 +10,7 @@ const minioClient = new Minio.Client({
   endPoint: config.minioEndpoint || process.env.MINIO_ENDPOINT,
   useSSL: config.minioUseSSL === "true" || process.env.MINIO_USE_SSL === "true",
   accessKey: config.minioAccessKey || process.env.MINIO_ACCESS_KEY,
-  secretKey: config.minioSecretKey || process.env.MINIO_SECRET_KEY
+  secretKey: config.minioSecretKey || process.env.MINIO_SECRET_KEY,
 });
 const MINIO_BUCKET_NAME = config.minioBucket || process.env.MINIO_BUCKET_NAME;
 
@@ -51,7 +51,7 @@ class KYCService {
     }
 
     const fileName = `${userId}_${documentType}_${Date.now()}${path.extname(
-      file.originalname
+      file.originalname,
     )}`;
 
     try {
@@ -75,13 +75,13 @@ class KYCService {
         MINIO_BUCKET_NAME,
         fileName,
         fileStream,
-        fileSize
+        fileSize,
       );
 
       const fileUrl = await minioClient.presignedGetObject(
         MINIO_BUCKET_NAME,
         fileName,
-        24 * 60 * 60
+        24 * 60 * 60,
       );
 
       kycVerification.documents.push({
