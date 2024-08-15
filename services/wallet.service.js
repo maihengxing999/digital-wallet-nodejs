@@ -2,41 +2,50 @@ const Wallet = require('../models/wallet.model');
 const Transaction = require('../models/transaction.model');
 const StripeService = require('./stripe.service');
 const KYCVerification = require("../models/kyc-verification.model");
+const NotificationService = require("./notification.service");
 const crypto = require("crypto");
 const qrcode = require("qrcode");
 const logger = require("../utils/logger");
 
 class WalletService {
   static async createWallet(userId, email, initialBalance) {
-    // Check KYC status first
-    const kycVerification = await KYCVerification.findOne({ user: userId });
-    if (!kycVerification || kycVerification.status !== "approved") {
-      throw new Error(
-        "KYC verification is not approved. Cannot create wallet."
-      );
+    try {
+      // Check KYC status first
+      const kycVerification = await KYCVerification.findOne({ user: userId });
+      if (!kycVerification || kycVerification.status !== "approved") {
+        throw new Error(
+          "KYC verification is not approved. Cannot create wallet."
+        );
+      }
+
+      // Check if user already has a wallet
+      const existingWallet = await Wallet.findOne({ user: userId });
+      if (existingWallet) {
+        throw new Error("User already has a wallet");
+      }
+
+      const stripeCustomer = await StripeService.createCustomer(email);
+
+      const wallet = new Wallet({
+        user: userId,
+        balance: initialBalance,
+        stripeCustomerId: stripeCustomer.id,
+      });
+
+      await wallet.save();
+
+      if (initialBalance > 0) {
+        await this.createTransaction("deposit", initialBalance, null, wallet._id);
+      }
+
+      // Send notification
+      await NotificationService.notifyWalletCreation(email, initialBalance);
+
+      return wallet;
+    } catch (error) {
+      logger.error("Error in createWallet:", error);
+      throw new Error(`Failed to create wallet: ${error.message}`);
     }
-
-    // Check if user already has a wallet
-    const existingWallet = await Wallet.findOne({ user: userId });
-    if (existingWallet) {
-      throw new Error("User already has a wallet");
-    }
-
-    const stripeCustomer = await StripeService.createCustomer(email);
-
-    const wallet = new Wallet({
-      user: userId,
-      balance: initialBalance,
-      stripeCustomerId: stripeCustomer.id,
-    });
-
-    await wallet.save();
-
-    if (initialBalance > 0) {
-      await this.createTransaction("deposit", initialBalance, null, wallet._id);
-    }
-
-    return wallet;
   }
 
   /*
@@ -65,12 +74,12 @@ class WalletService {
     }
   } */
   static async deposit(userId, amount, paymentMethodId) {
-    const wallet = await Wallet.findOne({ user: userId });
-    if (!wallet) {
-      throw new Error("Wallet not found");
-    }
-
     try {
+      const wallet = await Wallet.findOne({ user: userId });
+      if (!wallet) {
+        throw new Error("Wallet not found");
+      }
+
       // Attach the payment method to the customer if it's not already attached
       await StripeService.attachPaymentMethodToCustomer(
         paymentMethodId,
@@ -103,6 +112,9 @@ class WalletService {
           confirmedPaymentIntent.id
         );
 
+        // Send notification
+        await NotificationService.notifyDeposit(wallet.user, depositAmount);
+
         return {
           balance: wallet.balance,
           transactionId: confirmedPaymentIntent.id,
@@ -111,6 +123,7 @@ class WalletService {
         throw new Error("Deposit failed");
       }
     } catch (error) {
+      logger.error("Error in deposit:", error);
       throw new Error(`Deposit failed: ${error.message}`);
     }
   }
@@ -186,60 +199,76 @@ class WalletService {
   }
 
   static async withdraw(userId, amount) {
-    const wallet = await Wallet.findOne({ user: userId });
-    if (!wallet) {
-      throw new Error("Wallet not found");
+    try {
+      const wallet = await Wallet.findOne({ user: userId });
+      if (!wallet) {
+        throw new Error("Wallet not found");
+      }
+
+      if (wallet.balance < amount) {
+        throw new Error("Insufficient funds");
+      }
+
+      const payout = await StripeService.createPayout(
+        amount,
+        wallet.stripeCustomerId
+      );
+
+      wallet.balance -= amount;
+      await wallet.save();
+
+      await this.createTransaction(
+        "withdraw",
+        amount,
+        wallet._id,
+        null,
+        payout.id
+      );
+
+      // Send notification
+      await NotificationService.notifyWithdrawal(wallet.user, amount);
+
+      return { balance: wallet.balance, payoutId: payout.id };
+    } catch (error) {
+      logger.error("Error in withdraw:", error);
+      throw new Error(`Withdrawal failed: ${error.message}`);
     }
-
-    if (wallet.balance < amount) {
-      throw new Error("Insufficient funds");
-    }
-
-    const payout = await StripeService.createPayout(
-      amount,
-      wallet.stripeCustomerId
-    );
-
-    wallet.balance -= amount;
-    await wallet.save();
-
-    await this.createTransaction(
-      "withdraw",
-      amount,
-      wallet._id,
-      null,
-      payout.id
-    );
-
-    return { balance: wallet.balance, payoutId: payout.id };
   }
 
   static async transfer(fromUserId, toUserId, amount) {
-    const fromWallet = await Wallet.findOne({ user: fromUserId });
-    const toWallet = await Wallet.findOne({ user: toUserId });
+    try {
+      const fromWallet = await Wallet.findOne({ user: fromUserId });
+      const toWallet = await Wallet.findOne({ user: toUserId });
 
-    if (!fromWallet || !toWallet) {
-      throw new Error("One or both wallets not found");
+      if (!fromWallet || !toWallet) {
+        throw new Error("One or both wallets not found");
+      }
+
+      if (fromWallet.balance < amount) {
+        throw new Error("Insufficient funds");
+      }
+
+      fromWallet.balance -= amount;
+      toWallet.balance += amount;
+
+      await fromWallet.save();
+      await toWallet.save();
+
+      await this.createTransaction(
+        "transfer",
+        amount,
+        fromWallet._id,
+        toWallet._id
+      );
+
+      // Send notifications
+      await NotificationService.notifyTransfer(fromUserId, toUserId, amount);
+
+      return { fromBalance: fromWallet.balance, toBalance: toWallet.balance };
+    } catch (error) {
+      logger.error("Error in transfer:", error);
+      throw new Error(`Transfer failed: ${error.message}`);
     }
-
-    if (fromWallet.balance < amount) {
-      throw new Error("Insufficient funds");
-    }
-
-    fromWallet.balance -= amount;
-    toWallet.balance += amount;
-
-    await fromWallet.save();
-    await toWallet.save();
-
-    await this.createTransaction(
-      "transfer",
-      amount,
-      fromWallet._id,
-      toWallet._id
-    );
-
-    return { fromBalance: fromWallet.balance, toBalance: toWallet.balance };
   }
 
   static async getTransactions(userId) {
@@ -400,11 +429,15 @@ class WalletService {
         payerWallet.balance -= transaction.amount;
         await payerWallet.save();
 
+        // Send notifications
+        await NotificationService.notifyQRPayment(payerId, transaction.toWallet.user, transaction.amount);
+
         return { message: "Payment processed successfully", paymentIntentId };
       } else {
         throw new Error("Payment failed");
       }
     } catch (error) {
+      logger.error("Error in confirmQRPayment:", error);
       throw new Error(`Failed to confirm QR payment: ${error.message}`);
     }
   }

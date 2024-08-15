@@ -49,6 +49,12 @@ const userSchema = new mongoose.Schema({
     sparse: true,
   },
   wallet: walletSchema,
+  isEmailVerified: {
+    type: Boolean,
+    default: false,
+  },
+  emailVerificationToken: String,
+  emailVerificationExpires: Date,
   createdAt: {
     type: Date,
     default: Date.now,

@@ -8,6 +8,7 @@ const router = express.Router();
 
 router.post("/register", AuthController.register);
 router.post("/login", AuthController.login);
+router.get("/verify-email/:token", AuthController.verifyEmail);
 
 // Admin routes
 router.post("/create-admin", authenticateAdmin, AuthController.createAdmin);

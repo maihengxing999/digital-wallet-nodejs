@@ -11,4 +11,8 @@ module.exports = {
   minioAccessKey: process.env.MINIO_ACCESS_KEY,
   minioSecretKey: process.env.MINIO_SECRET_KEY,
   minioBucket: process.env.MINIO_BUCKET_NAME,
+  emailHost: process.env.EMAIL_HOST,
+  emailPort: process.env.EMAIL_PORT,
+  emailUsername: process.env.EMAIL_USERNAME,
+  emailPassword: process.env.EMAIL_PASSWORD,
 };
