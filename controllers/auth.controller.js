@@ -7,20 +7,35 @@ const config = require("../config");
 const NotificationService = require("../services/notification.service");
 
 exports.register = async (req, res) => {
+  const session = await User.startSession();
+  session.startTransaction();
+
   try {
     const { error } = validator.validateUser(req.body);
-    if (error) return res.status(400).json({ error: error.details[0].message });
+    if (error) {
+      await session.abortTransaction();
+      session.endSession();
+      return res.status(400).json({ error: error.details[0].message });
+    }
 
     const { email, password, firstName, lastName } = req.body;
 
-    let existingUser = await User.findOne({ email });
-    if (existingUser) return res.status(400).json({ error: "User already exists" });
+    if (!isValidEmail(email)) {
+      await session.abortTransaction();
+      session.endSession();
+      return res.status(400).json({ error: "Invalid email address" });
+    }
 
-    // Create verification token
+    let existingUser = await User.findOne({ email });
+    if (existingUser) {
+      await session.abortTransaction();
+      session.endSession();
+      return res.status(400).json({ error: "User already exists" });
+    }
+
     const emailVerificationToken = crypto.randomBytes(20).toString('hex');
     const emailVerificationExpires = Date.now() + 24 * 60 * 60 * 1000; // 24 hours
 
-    // Create user object but don't save it yet
     const newUser = new User({
       email,
       password,
@@ -30,51 +45,47 @@ exports.register = async (req, res) => {
       emailVerificationExpires
     });
 
-    // Prepare verification email
     const verificationURL = `${req.protocol}://${req.get('host')}/api/auth/verify-email/${emailVerificationToken}`;
 
-    // Start a database transaction
-    const session = await User.startSession();
-    session.startTransaction();
+    // Save the user first
+    await newUser.save({ session });
 
+    // Attempt to send verification email
     try {
-      // Save the user
-      await newUser.save({ session });
-
-      // Send verification email
-      logger.debug('Sending verification email to:', newUser.email);
-      logger.debug('Verification URL:', verificationURL);
       await NotificationService.notifyEmailVerification(newUser, verificationURL);
-
-      // If everything is successful, commit the transaction
-      await session.commitTransaction();
-      session.endSession();
-
-      res.status(201).json({
-        message: "User registered successfully. Please check your email to verify your account."
-      });
-    } catch (error) {
-      // If there's an error, abort the transaction
-      await session.abortTransaction();
-      session.endSession();
-
-      if (error.message.includes('send email notification')) {
-        logger.error("Failed to send verification email:", error);
-        return res.status(500).json({
-          error: "We couldn't send the verification email. Please try registering again or contact support.",
-        });
-      }
-
-      throw error; // Re-throw for the outer catch block to handle
+      logger.info(`Verification email sent successfully to ${newUser.email}`);
+    } catch (emailError) {
+      logger.error("Error sending verification email:", emailError);
     }
+
+    // Commit the transaction
+    await session.commitTransaction();
+    session.endSession();
+
+    res.status(201).json({
+      message: "User registered successfully. Please check your email to verify your account.",
+      user: {
+        id: newUser._id,
+        email: newUser.email,
+        firstName: newUser.firstName,
+        lastName: newUser.lastName
+      }
+    });
   } catch (error) {
+    await session.abortTransaction();
+    session.endSession();
+
     logger.error("Error in user registration:", error);
     res.status(500).json({
       error: "We encountered an unexpected error during registration. Please try again or contact support if the problem persists.",
-      details: process.env.NODE_ENV === 'development' ? error.message : undefined
     });
   }
 };
+
+function isValidEmail(email) {
+  const emailRegex = /^(([^<>()\[\]\\.,;:\s@"]+(\.[^<>()\[\]\\.,;:\s@"]+)*)|(".+"))@((\[[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}])|(([a-zA-Z\-0-9]+\.)+[a-zA-Z]{2,}))$/;
+  return emailRegex.test(email);
+}
 
 exports.verifyEmail = async (req, res) => {
   try {

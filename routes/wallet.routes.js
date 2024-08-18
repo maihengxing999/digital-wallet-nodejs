@@ -48,6 +48,16 @@ router.post("/confirm-payment-intent", authenticateJWT, async (req, res) => {
   }
 });
 
+router.get("/payment-status/:paymentIntentId", authenticateJWT, async (req, res) => {
+  try {
+    const { paymentIntentId } = req.params;
+    const status = await WalletService.getPaymentStatus(req.user.id, paymentIntentId);
+    res.json(status);
+  } catch (error) {
+    res.status(400).json({ error: error.message });
+  }
+});
+
 router.get("/balance", authenticateJWT, async (req, res) => {
   try {
     const balance = await WalletService.getBalance(req.user.id);

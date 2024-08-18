@@ -18,6 +18,9 @@ class NotificationService {
     });
     this.templates = {};
     this.loadEmailTemplates();
+    Handlebars.registerHelper('eq', function(a, b) {
+      return a === b;
+    });
   }
 
   async loadEmailTemplates() {
@@ -26,7 +29,18 @@ class NotificationService {
       const baseTemplate = await fs.readFile(path.join(templateDir, 'base-email-template.html'), 'utf-8');
       this.baseTemplate = Handlebars.compile(baseTemplate);
 
-      const templateFiles = ['verification', 'login', 'deposit'];
+      const templateFiles = [
+        'verification',
+        'login',
+        'deposit',
+        'kyc-verification',
+        'qr-payment',
+        'transfer',
+        'withdrawal',
+        'wallet-creation',
+        'payment-method-added'
+      ];
+
       for (const file of templateFiles) {
         const templatePath = path.join(templateDir, `${file}-email-template.html`);
         const templateContent = await fs.readFile(templatePath, 'utf-8');
@@ -106,33 +120,34 @@ class NotificationService {
           verificationLink
         }
       );
+      logger.info(`Verification email sent successfully to ${user.email}`);
+      return true;
     } catch (error) {
-      logger.error('Error in notifyEmailVerification:', error);
-      throw new Error(`Failed to send verification email: ${error.message}`);
+      logger.error(`Error sending verification email to ${user.email}:`, error);
+      return false;
     }
   }
 
-
   async notifyLogin(user, loginTime, loginLocation) {
-      try {
-        await this.sendEmail(
-          user.email,
-          'New Login to Your E-Wallet Account',
-          'login',
-          {
-            firstName: user.firstName,
-            loginTime,
-            loginLocation,
-            secureAccountLink: '' //TODO: add link here
-          }
-        );
-      } catch (error) {
-        logger.error('Error in notifyLogin:', error);
-        // We don't throw here to prevent login process from failing due to notification error
-      }
+    try {
+      await this.sendEmail(
+        user.email,
+        'New Login to Your E-Wallet Account',
+        'login',
+        {
+          firstName: user.firstName,
+          loginTime,
+          loginLocation,
+          secureAccountLink: `${config.appUrl}/secure-account` // Update with actual link
+        }
+      );
+    } catch (error) {
+      logger.error('Error in notifyLogin:', error);
+      // We don't throw here to prevent login process from failing due to notification error
     }
+  }
 
-  async notifyDeposit(userId, amount) {
+  async notifyDeposit(userId, amount, transactionId) {
     try {
       const user = await User.findById(userId);
       if (!user) throw new Error('User not found');
@@ -140,7 +155,14 @@ class NotificationService {
       await this.sendEmail(
         user.email,
         'Deposit Successful',
-        `Hello ${user.firstName}, a deposit of $${amount} has been successfully added to your wallet.`
+        'deposit',
+        {
+          firstName: user.firstName,
+          amount,
+          transactionId,
+          transactionDate: new Date().toLocaleString(),
+          viewBalanceLink: `${config.appUrl}/wallet/balance`
+        }
       );
     } catch (error) {
       logger.error('Error in notifyDeposit:', error);
@@ -148,7 +170,84 @@ class NotificationService {
     }
   }
 
-  async notifyTransfer(fromUserId, toUserId, amount) {
+  async notifyKYCUpdate(userId, kycStatus, rejectionReason = null) {
+    try {
+      const user = await User.findById(userId);
+      if (!user) throw new Error('User not found');
+
+      await this.sendEmail(
+        user.email,
+        'KYC Verification Update',
+        'kyc-verification',
+        {
+          firstName: user.firstName,
+          kycStatus,
+          rejectionReason,
+          accountLink: `${config.appUrl}/account`,
+          resubmitLink: `${config.appUrl}/kyc/resubmit`
+        }
+      );
+    } catch (error) {
+      logger.error('Error in notifyKYCUpdate:', error);
+      throw new Error(`Failed to send KYC update notification: ${error.message}`);
+    }
+  }
+
+  async notifyQRPayment(payerId, recipientId, amount, transactionId, paymentStatus) {
+    try {
+      logger.info(`Notifying QR payment. Payer: ${payerId}, Recipient: ${recipientId}`);
+
+      const [payer, recipient] = await Promise.all([
+        User.findById(payerId),
+        User.findById(recipientId)
+      ]);
+
+      if (!payer) {
+        logger.error(`Payer not found. ID: ${payerId}`);
+        throw new Error(`Payer not found. ID: ${payerId}`);
+      }
+      if (!recipient) {
+        logger.error(`Recipient not found. ID: ${recipientId}`);
+        throw new Error(`Recipient not found. ID: ${recipientId}`);
+      }
+
+      await Promise.all([
+        this.sendEmail(
+          payer.email,
+          'QR Payment Sent',
+          'qr-payment',
+          {
+            firstName: payer.firstName,
+            paymentStatus: 'sent',
+            amount,
+            transactionId,
+            transactionDate: new Date().toLocaleString(),
+            transactionDetailsLink: `${config.appUrl}/transactions/${transactionId}`
+          }
+        ),
+        this.sendEmail(
+          recipient.email,
+          'QR Payment Received',
+          'qr-payment',
+          {
+            firstName: recipient.firstName,
+            paymentStatus: 'received',
+            amount,
+            transactionId,
+            transactionDate: new Date().toLocaleString(),
+            transactionDetailsLink: `${config.appUrl}/transactions/${transactionId}`
+          }
+        )
+      ]);
+
+      logger.info(`QR payment notifications sent successfully for transaction ${transactionId}`);
+    } catch (error) {
+      logger.error('Error in notifyQRPayment:', error);
+      throw new Error(`Failed to send QR payment notifications: ${error.message}`);
+    }
+  }
+
+  async notifyTransfer(fromUserId, toUserId, amount, transactionId, fromBalance, toBalance) {
     try {
       const [fromUser, toUser] = await Promise.all([
         User.findById(fromUserId),
@@ -161,12 +260,32 @@ class NotificationService {
         this.sendEmail(
           fromUser.email,
           'Transfer Sent',
-          `Hello ${fromUser.firstName}, you have successfully sent $${amount} to ${toUser.email}.`
+          'transfer',
+          {
+            firstName: fromUser.firstName,
+            transferStatus: 'sent',
+            amount,
+            otherPartyName: toUser.email,
+            transactionId,
+            transactionDate: new Date().toLocaleString(),
+            transactionDetailsLink: `${config.appUrl}/transactions/${transactionId}`,
+            newBalance: fromBalance
+          }
         ),
         this.sendEmail(
           toUser.email,
           'Transfer Received',
-          `Hello ${toUser.firstName}, you have received $${amount} from ${fromUser.email}.`
+          'transfer',
+          {
+            firstName: toUser.firstName,
+            transferStatus: 'received',
+            amount,
+            otherPartyName: fromUser.email,
+            transactionId,
+            transactionDate: new Date().toLocaleString(),
+            transactionDetailsLink: `${config.appUrl}/transactions/${transactionId}`,
+            newBalance: toBalance
+          }
         )
       ]);
     } catch (error) {
@@ -175,15 +294,26 @@ class NotificationService {
     }
   }
 
-  async notifyWithdrawal(userId, amount) {
+  async notifyWithdrawal(userId, amount, transactionId, withdrawalStatus, withdrawalMethod, failureReason = null) {
     try {
       const user = await User.findById(userId);
       if (!user) throw new Error('User not found');
 
       await this.sendEmail(
         user.email,
-        'Withdrawal Processed',
-        `Hello ${user.firstName}, a withdrawal of $${amount} has been processed from your wallet.`
+        'Withdrawal Update',
+        'withdrawal',
+        {
+          firstName: user.firstName,
+          amount,
+          withdrawalStatus,
+          transactionId,
+          transactionDate: new Date().toLocaleString(),
+          withdrawalMethod,
+          failureReason,
+          transactionDetailsLink: `${config.appUrl}/transactions/${transactionId}`,
+          newBalance: user.wallet.balance - amount // Assuming balance is updated before notification for successful withdrawals
+        }
       );
     } catch (error) {
       logger.error('Error in notifyWithdrawal:', error);
@@ -191,43 +321,48 @@ class NotificationService {
     }
   }
 
-  async notifyWalletCreation(email, initialBalance) {
+  async notifyWalletCreation(userId, initialBalance) {
     try {
+      const user = await User.findById(userId);
+      if (!user) throw new Error('User not found');
+
       await this.sendEmail(
-        email,
+        user.email,
         'Wallet Created Successfully',
-        `Congratulations! Your new wallet has been created with an initial balance of $${initialBalance}.`
+        'wallet-creation',
+        {
+          firstName: user.firstName,
+          initialBalance,
+          walletLink: `${config.appUrl}/wallet`
+        }
       );
+      logger.info(`Wallet creation notification sent to user ${userId}`);
     } catch (error) {
       logger.error('Error in notifyWalletCreation:', error);
-      throw new Error(`Failed to send wallet creation notification: ${error.message}`);
+      // We don't throw here to prevent wallet creation from failing due to notification error
     }
   }
 
-  async notifyQRPayment(payerId, recipientId, amount) {
+  async notifyPaymentMethodAdded(userId, last4, cardBrand) {
     try {
-      const [payer, recipient] = await Promise.all([
-        User.findById(payerId),
-        User.findById(recipientId)
-      ]);
+      const user = await User.findById(userId);
+      if (!user) throw new Error('User not found');
 
-      if (!payer || !recipient) throw new Error('One or both users not found');
-
-      await Promise.all([
-        this.sendEmail(
-          payer.email,
-          'QR Payment Sent',
-          `Hello ${payer.firstName}, you have successfully sent $${amount} via QR payment to ${recipient.email}.`
-        ),
-        this.sendEmail(
-          recipient.email,
-          'QR Payment Received',
-          `Hello ${recipient.firstName}, you have received $${amount} via QR payment from ${payer.email}.`
-        )
-      ]);
+      await this.sendEmail(
+        user.email,
+        'New Payment Method Added',
+        'payment-method-added',
+        {
+          firstName: user.firstName,
+          last4: last4,
+          cardBrand: cardBrand,
+          managePaymentMethodsLink: `${config.appUrl}/wallet/payment-methods`
+        }
+      );
+      logger.info(`Payment method added notification sent to user ${userId}`);
     } catch (error) {
-      logger.error('Error in notifyQRPayment:', error);
-      throw new Error(`Failed to send QR payment notifications: ${error.message}`);
+      logger.error('Error in notifyPaymentMethodAdded:', error);
+      // We don't throw here to prevent the payment method addition from failing due to notification error
     }
   }
 

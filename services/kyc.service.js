@@ -4,19 +4,24 @@ const Minio = require("minio");
 const config = require("../config");
 const fs = require("fs");
 const path = require("path");
+const NotificationService = require("./notification.service");
+const logger = require("../utils/logger");
 
 // Configure MinIO client
 const minioClient = new Minio.Client({
-  endPoint: config.minioEndpoint || process.env.MINIO_ENDPOINT,
-  useSSL: config.minioUseSSL === "true" || process.env.MINIO_USE_SSL === "true",
-  accessKey: config.minioAccessKey || process.env.MINIO_ACCESS_KEY,
-  secretKey: config.minioSecretKey || process.env.MINIO_SECRET_KEY,
+  endPoint: config.minioEndpoint,
+  useSSL: config.minioUseSSL === "true",
+  accessKey: config.minioAccessKey,
+  secretKey: config.minioSecretKey,
 });
-const MINIO_BUCKET_NAME = config.minioBucket || process.env.MINIO_BUCKET_NAME;
+const MINIO_BUCKET_NAME = config.minioBucket;
 
 if (!MINIO_BUCKET_NAME) {
-  throw new Error("MINIO_BUCKET_NAME environment variable is not set");
+  throw new Error("MINIO_BUCKET_NAME is not set in the configuration");
 }
+
+// Auto-approve KYC setting
+const AUTO_APPROVE_KYC = process.env.AUTO_APPROVE_KYC === "true";
 
 class KYCService {
   static async initiateKYC(userId) {
@@ -32,10 +37,20 @@ class KYCService {
 
     kycVerification = new KYCVerification({
       user: userId,
-      status: "pending",
+      status: AUTO_APPROVE_KYC ? "approved" : "pending",
     });
 
+    if (AUTO_APPROVE_KYC) {
+      kycVerification.approvedAt = Date.now();
+    }
+
     await kycVerification.save();
+
+    // Notify user about KYC initiation or auto-approval
+    await NotificationService.notifyKYCUpdate(userId, kycVerification.status);
+
+    logger.info(`KYC initiated for user ${userId}. Auto-approve: ${AUTO_APPROVE_KYC}`);
+
     return kycVerification;
   }
 
@@ -46,12 +61,17 @@ class KYCService {
       kycVerification = await this.initiateKYC(userId);
     }
 
+    if (AUTO_APPROVE_KYC) {
+      logger.info(`Document upload skipped for user ${userId} due to auto-approval`);
+      return kycVerification;
+    }
+
     if (kycVerification.status !== "pending") {
       throw new Error("KYC verification is not in pending state");
     }
 
     const fileName = `${userId}_${documentType}_${Date.now()}${path.extname(
-      file.originalname,
+      file.originalname
     )}`;
 
     try {
@@ -75,13 +95,13 @@ class KYCService {
         MINIO_BUCKET_NAME,
         fileName,
         fileStream,
-        fileSize,
+        fileSize
       );
 
       const fileUrl = await minioClient.presignedGetObject(
         MINIO_BUCKET_NAME,
         fileName,
-        24 * 60 * 60,
+        24 * 60 * 60
       );
 
       kycVerification.documents.push({
@@ -101,14 +121,20 @@ class KYCService {
         fs.unlinkSync(file.path);
       }
 
+      logger.info(`Document uploaded successfully for user ${userId}`);
       return kycVerification;
     } catch (error) {
-      console.error("Error uploading document to MinIO:", error);
+      logger.error("Error uploading document to MinIO:", error);
       throw new Error("Failed to upload document: " + error.message);
     }
   }
 
-  static async updateKYCStatus(userId, newStatus) {
+  static async updateKYCStatus(userId, newStatus, rejectionReason = null) {
+    if (AUTO_APPROVE_KYC) {
+      logger.info(`KYC status update skipped for user ${userId} due to auto-approval`);
+      return { status: "approved" };
+    }
+
     const kycVerification = await KYCVerification.findOne({ user: userId });
     if (!kycVerification) {
       throw new Error("KYC verification not found");
@@ -117,9 +143,15 @@ class KYCService {
     kycVerification.status = newStatus;
     if (newStatus === "approved") {
       kycVerification.approvedAt = Date.now();
+    } else if (newStatus === "rejected") {
+      kycVerification.rejectionReason = rejectionReason;
     }
 
     await kycVerification.save();
+
+    // Notify user about KYC status update
+    await NotificationService.notifyKYCUpdate(userId, newStatus, rejectionReason);
+
     return kycVerification;
   }
 
@@ -137,12 +169,44 @@ class KYCService {
       })),
       initiatedAt: kycVerification.createdAt,
       approvedAt: kycVerification.approvedAt,
+      rejectionReason: kycVerification.rejectionReason,
+      isAutoApproved: AUTO_APPROVE_KYC,
     };
   }
 
   static async isKYCApproved(userId) {
+    if (AUTO_APPROVE_KYC) {
+      return true;
+    }
     const kycVerification = await KYCVerification.findOne({ user: userId });
     return kycVerification && kycVerification.status === "approved";
+  }
+
+  static async resubmitKYC(userId) {
+    if (AUTO_APPROVE_KYC) {
+      logger.info(`KYC resubmission skipped for user ${userId} due to auto-approval`);
+      return { status: "approved" };
+    }
+
+    const kycVerification = await KYCVerification.findOne({ user: userId });
+    if (!kycVerification) {
+      throw new Error("KYC verification not found");
+    }
+
+    if (kycVerification.status !== "rejected") {
+      throw new Error("KYC verification is not in rejected state");
+    }
+
+    kycVerification.status = "pending";
+    kycVerification.rejectionReason = null;
+    kycVerification.documents = [];
+
+    await kycVerification.save();
+
+    // Notify user about KYC resubmission
+    await NotificationService.notifyKYCUpdate(userId, "pending");
+
+    return kycVerification;
   }
 }
 
