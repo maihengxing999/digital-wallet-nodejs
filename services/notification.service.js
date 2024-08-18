@@ -8,20 +8,37 @@ const path = require('path');
 
 class NotificationService {
   constructor() {
-    this.transporter = nodemailer.createTransport({
-      host: config.emailHost,
-      port: config.emailPort,
-      auth: {
-        user: config.emailUsername,
-        pass: config.emailPassword
-      }
-    });
+    this.transporter = this.createTransporter();
     this.templates = {};
     this.loadEmailTemplates();
     Handlebars.registerHelper('eq', function(a, b) {
       return a === b;
     });
   }
+
+  createTransporter() {
+    const useMailHog = process.env.USE_MAILHOG === 'true';
+
+    if (useMailHog) {
+      logger.info('Using MailHog for email testing');
+      return nodemailer.createTransport({
+        host: 'mailhog', // Docker service name
+        port: 1025,
+        ignoreTLS: true
+      });
+    } else {
+      logger.info('Using configured SMTP server for emails');
+      return nodemailer.createTransport({
+        host: config.emailHost,
+        port: config.emailPort,
+        auth: {
+          user: config.emailUsername,
+          pass: config.emailPassword
+        }
+      });
+    }
+  }
+
 
   async loadEmailTemplates() {
     try {
@@ -79,6 +96,12 @@ class NotificationService {
 
       await this.transporter.sendMail(mailOptions);
       logger.info(`Email sent to ${to} using template ${templateName}`);
+
+      // If using MailHog, log additional information for testing
+      if (process.env.USE_MAILHOG === 'true') {
+        logger.info(`MailHog Web Interface: http://localhost:8025`);
+        logger.info(`Check MailHog to view the sent email.`);
+      }
     } catch (error) {
       logger.error('Error sending email:', error);
       logger.error('Template name:', templateName);
