@@ -80,6 +80,25 @@ router.post("/add-payment-method", authenticateJWT, async (req, res) => {
   }
 });
 
+router.get("/payment-methods", authenticateJWT, async (req, res) => {
+  try {
+    const paymentMethods = await WalletService.listPaymentMethods(req.user.id);
+    res.json(paymentMethods);
+  } catch (error) {
+    res.status(400).json({ error: error.message });
+  }
+});
+
+router.delete("/payment-methods/:paymentMethodId", authenticateJWT, async (req, res) => {
+  try {
+    const { paymentMethodId } = req.params;
+    await WalletService.deletePaymentMethod(req.user.id, paymentMethodId);
+    res.json({ message: "Payment method deleted successfully" });
+  } catch (error) {
+    res.status(400).json({ error: error.message });
+  }
+});
+
 router.post("/withdraw", authenticateJWT, async (req, res) => {
   try {
     const { amount } = req.body;

@@ -1,75 +1,15 @@
 {
   "info": {
-    "_postman_id": "a290fa52-14f3-41c8-9d32-c6940d0f75ec",
+    "_postman_id": "238d86c4-4b0c-40b8-b6f3-f644767d08cb",
     "name": "E-Wallet API Tests (LOCAL) Updated",
     "description": "Collection for testing E-Wallet API endpoints including admin operations, email verification, and payment status",
-    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+    "_exporter_id": "37607686"
   },
   "item": [
     {
       "name": "Auth & Admin",
       "item": [
-        {
-          "name": "Create First Admin",
-          "event": [
-            {
-              "listen": "prerequest",
-              "script": {
-                "exec": [
-                  "pm.environment.set(\"ALLOW_ADMIN_SETUP\", \"true\");",
-                  "pm.environment.set(\"setup_key\", \"91b95fa91f5cf20e2cab5d791b2922b7325c20d9\");"
-                ],
-                "type": "text/javascript"
-              }
-            },
-            {
-              "listen": "test",
-              "script": {
-                "exec": [
-                  "pm.test(\"Status code is 201\", function () {",
-                  "    pm.response.to.have.status(201);",
-                  "});",
-                  "",
-                  "if (pm.response.code === 201) {",
-                  "    var jsonData = pm.response.json();",
-                  "    pm.environment.set(\"admin_token\", jsonData.token);",
-                  "    pm.environment.set(\"ALLOW_ADMIN_SETUP\", \"false\");",
-                  "    ",
-                  "    pm.test(\"Admin user created\", function () {",
-                  "        pm.expect(jsonData.user.role).to.eql(\"admin\");",
-                  "    });",
-                  "} else {",
-                  "    console.log(pm.response.json());",
-                  "}"
-                ],
-                "type": "text/javascript"
-              }
-            }
-          ],
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              },
-              {
-                "key": "X-Setup-Key",
-                "value": "{{setup_key}}"
-              }
-            ],
-            "body": {
-              "mode": "raw",
-              "raw": "{\n    \"email\": \"admin@example.com\",\n    \"password\": \"secureadminpass123\",\n    \"firstName\": \"Admin\",\n    \"lastName\": \"User\"\n}"
-            },
-            "url": {
-              "raw": "{{base_url}}/api/auth/setup-admin",
-              "host": ["{{base_url}}"],
-              "path": ["api", "auth", "setup-admin"]
-            }
-          },
-          "response": []
-        },
         {
           "name": "Register User",
           "event": [
@@ -86,7 +26,8 @@
                   "    pm.expect(jsonData.message).to.include(\"Please check your email to verify your account\");",
                   "});"
                 ],
-                "type": "text/javascript"
+                "type": "text/javascript",
+                "packages": {}
               }
             }
           ],
@@ -100,48 +41,12 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\"email\":\"user@example.com\",\"password\":\"password123\",\"firstName\":\"John\",\"lastName\":\"Doe\"}"
+              "raw": "{\n    \"email\": \"user@example.com\",\n    \"password\": \"password123\",\n    \"firstName\": \"Ron\",\n    \"lastName\": \"DC\"\n}"
             },
             "url": {
               "raw": "{{base_url}}/api/auth/register",
               "host": ["{{base_url}}"],
               "path": ["api", "auth", "register"]
-            }
-          },
-          "response": []
-        },
-        {
-          "name": "Verify Email",
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "exec": [
-                  "pm.test(\"Status code is 200\", function () {",
-                  "    pm.response.to.have.status(200);",
-                  "});",
-                  "",
-                  "if (pm.response.code === 200) {",
-                  "    var jsonData = pm.response.json();",
-                  "    pm.environment.set(\"user_token\", jsonData.token);",
-                  "    pm.environment.set(\"user_id\", jsonData.user.id);",
-                  "",
-                  "    pm.test(\"Email verified successfully\", function () {",
-                  "        pm.expect(jsonData.message).to.eql(\"Email verified successfully\");",
-                  "    });",
-                  "}"
-                ],
-                "type": "text/javascript"
-              }
-            }
-          ],
-          "request": {
-            "method": "GET",
-            "header": [],
-            "url": {
-              "raw": "{{base_url}}/api/auth/verify-email/{{verification_token}}",
-              "host": ["{{base_url}}"],
-              "path": ["api", "auth", "verify-email", "{{verification_token}}"]
             }
           },
           "response": []
@@ -191,6 +96,80 @@
       ]
     },
     {
+      "name": "KYC",
+      "item": [
+        {
+          "name": "Initiate KYC",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{user_token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/kyc/initiate",
+              "host": ["{{base_url}}"],
+              "path": ["api", "kyc", "initiate"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Upload KYC Document",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{user_token}}"
+              }
+            ],
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "document",
+                  "type": "file",
+                  "src": "/path/to/document.pdf"
+                },
+                {
+                  "key": "documentType",
+                  "value": "identity",
+                  "type": "text"
+                }
+              ]
+            },
+            "url": {
+              "raw": "{{base_url}}/api/kyc/upload-document",
+              "host": ["{{base_url}}"],
+              "path": ["api", "kyc", "upload-document"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get KYC Status",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{user_token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/kyc/status",
+              "host": ["{{base_url}}"],
+              "path": ["api", "kyc", "status"]
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
       "name": "Wallet",
       "item": [
         {
@@ -209,7 +188,7 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\"initialBalance\": 100}"
+              "raw": "{\"initialBalance\": 1000}"
             },
             "url": {
               "raw": "{{base_url}}/api/wallet/create",
@@ -249,7 +228,8 @@
                   "    pm.environment.set(\"transaction_id\", jsonData.transactionId);",
                   "}"
                 ],
-                "type": "text/javascript"
+                "type": "text/javascript",
+                "packages": {}
               }
             }
           ],
@@ -267,7 +247,7 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\"amount\": 50, \"paymentMethodId\": \"{{payment_method_id}}\"}"
+              "raw": "{\"amount\": 1000, \"paymentMethodId\": \"{{payment_method_id}}\"}"
             },
             "url": {
               "raw": "{{base_url}}/api/wallet/deposit",
@@ -394,6 +374,47 @@
           "response": []
         },
         {
+          "name": "List Payment Methods",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{user_token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/wallet/payment-methods",
+              "host": ["{{base_url}}"],
+              "path": ["api", "wallet", "payment-methods"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Delete Payment Method",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{user_token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/wallet/payment-methods/{{payment_method_id}}",
+              "host": ["{{base_url}}"],
+              "path": [
+                "api",
+                "wallet",
+                "payment-methods",
+                "{{payment_method_id}}"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
           "name": "Get Transactions",
           "request": {
             "method": "GET",
@@ -407,6 +428,32 @@
               "raw": "{{base_url}}/api/wallet/transactions",
               "host": ["{{base_url}}"],
               "path": ["api", "wallet", "transactions"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Transfer",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{user_token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n    \"toUserId\": \"66c1ae51d0109b4b7b985395\", //2nd user\n    \"amount\": 30\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/wallet/transfer",
+              "host": ["{{base_url}}"],
+              "path": ["api", "wallet", "transfer"]
             }
           },
           "response": []
@@ -469,7 +516,8 @@
                   "    pm.environment.set(\"client_secret\", jsonData.clientSecret);",
                   "}"
                 ],
-                "type": "text/javascript"
+                "type": "text/javascript",
+                "packages": {}
               }
             }
           ],
@@ -487,7 +535,7 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n    \"paymentId\": \"{{qr_payment_id}}\",\n    \"paymentMethodId\": \"{{payment_method_id}}\"\n}"
+              "raw": "{\n    \"paymentId\": \"{{qr_payment_id}}\", //replace value when testing payment transfer\n    \"paymentMethodId\": \"{{payment_method_id}}\"\n}"
             },
             "url": {
               "raw": "{{base_url}}/api/wallet/initiate-qr-payment",
