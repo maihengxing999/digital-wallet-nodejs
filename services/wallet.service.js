@@ -76,15 +76,15 @@ class WalletService {
       }
 
       let paymentIntent;
-      if (STRIPE_TEST_PAYMENT_METHODS.has(paymentMethodId)) {
-        // For test payment methods, we'll simulate a successful payment
-        paymentIntent = {
-          id: `pi_simulated_${crypto.randomBytes(16).toString("hex")}`,
-          status: "succeeded",
-          amount: amount * 100 // Convert to cents for consistency with Stripe
-        };
-        logger.info(`Simulated payment intent for test payment method: ${JSON.stringify(paymentIntent)}`);
-      } else {
+      // if (STRIPE_TEST_PAYMENT_METHODS.has(paymentMethodId)) {
+      //   // For test payment methods, we'll simulate a successful payment
+      //   paymentIntent = {
+      //     id: `pi_simulated_${crypto.randomBytes(16).toString("hex")}`,
+      //     status: "succeeded",
+      //     amount: amount * 100 // Convert to cents for consistency with Stripe
+      //   };
+      //   logger.info(`Simulated payment intent for test payment method: ${JSON.stringify(paymentIntent)}`);
+      // } else {
         // For real payment methods, proceed with Stripe
         paymentIntent = await StripeService.createPaymentIntent(
           amount * 100, // Convert to cents for Stripe
@@ -96,7 +96,7 @@ class WalletService {
           paymentIntent.id,
           paymentMethodId
         );
-      }
+        //}
 
       if (paymentIntent.status === "succeeded") {
         const depositAmount = paymentIntent.amount / 100; // Convert back to dollars
@@ -134,7 +134,7 @@ class WalletService {
     }
 
     const paymentIntent = await StripeService.createPaymentIntent(
-      amount,
+      amount * 100,
       "usd",
       wallet.stripeCustomerId
     );
@@ -161,21 +161,21 @@ class WalletService {
     }
 
     let paymentIntent;
-    if (STRIPE_TEST_PAYMENT_METHODS.has(paymentMethodId)) {
-      // For test payment methods, we'll simulate a successful confirmation
-      paymentIntent = {
-        id: paymentIntentId,
-        status: "succeeded",
-        amount: 5000 // Simulated amount in cents
-      };
-      logger.info(`Simulated payment intent confirmation for test payment method: ${JSON.stringify(paymentIntent)}`);
-    } else {
+    // if (STRIPE_TEST_PAYMENT_METHODS.has(paymentMethodId)) {
+    //   // For test payment methods, we'll simulate a successful confirmation
+    //   paymentIntent = {
+    //     id: paymentIntentId,
+    //     status: "succeeded",
+    //     amount: 5000 // Simulated amount in cents
+    //   };
+    //   logger.info(`Simulated payment intent confirmation for test payment method: ${JSON.stringify(paymentIntent)}`);
+    // } else {
       // For real payment methods, proceed with Stripe
       paymentIntent = await StripeService.confirmPaymentIntent(
         paymentIntentId,
         paymentMethodId
       );
-    }
+      //}
 
     if (paymentIntent.status === "succeeded") {
       const amount = paymentIntent.amount / 100; // Convert from cents to dollars
@@ -203,20 +203,28 @@ class WalletService {
     // Verify that the payment intent belongs to this user
     const transaction = await Transaction.findOne({
       stripePaymentIntentId: paymentIntentId,
-    }).populate('fromWallet');
+    }).populate('fromWallet').populate('toWallet');
 
-    if (!transaction || transaction.fromWallet.user.toString() !== userId) {
-      throw new Error("Payment not found or does not belong to this user");
+    if (!transaction) {
+      throw new Error("Payment not found");
     }
 
-    // If you need more detailed status from Stripe, you can fetch it:
-    // const paymentIntent = await stripe.paymentIntents.retrieve(paymentIntentId);
+    // Check both fromWallet and toWallet
+    const isUserTransaction = (transaction.fromWallet && transaction.fromWallet.user.toString() === userId) ||
+                              (transaction.toWallet && transaction.toWallet.user.toString() === userId);
+
+    if (!isUserTransaction) {
+      throw new Error("Payment does not belong to this user");
+    }
 
     return {
       status: transaction.status,
       amount: transaction.amount,
       createdAt: transaction.createdAt,
       updatedAt: transaction.updatedAt,
+      type: transaction.type,
+      fromWallet: transaction.fromWallet ? transaction.fromWallet._id : null,
+      toWallet: transaction.toWallet ? transaction.toWallet._id : null,
       // Add any other relevant fields
     };
   }
@@ -519,16 +527,16 @@ class WalletService {
       await transaction.save();
 
       let paymentIntent;
-      if (STRIPE_TEST_PAYMENT_METHODS.has(paymentMethodId)) {
-        // For test payment methods, we'll simulate a payment intent
-        paymentIntent = {
-          id: `pi_simulated_${crypto.randomBytes(16).toString("hex")}`,
-          client_secret: `seti_simulated_${crypto.randomBytes(16).toString("hex")}`,
-          status: "requires_confirmation",
-          amount: transaction.amount * 100 // Convert to cents for consistency
-        };
-        logger.info(`Simulated payment intent for test payment method: ${JSON.stringify(paymentIntent)}`);
-      } else {
+      // if (STRIPE_TEST_PAYMENT_METHODS.has(paymentMethodId)) {
+      //   // For test payment methods, we'll simulate a payment intent
+      //   paymentIntent = {
+      //     id: `pi_simulated_${crypto.randomBytes(16).toString("hex")}`,
+      //     client_secret: `seti_simulated_${crypto.randomBytes(16).toString("hex")}`,
+      //     status: "requires_confirmation",
+      //     amount: transaction.amount * 100 // Convert to cents for consistency
+      //   };
+      //   logger.info(`Simulated payment intent for test payment method: ${JSON.stringify(paymentIntent)}`);
+      // } else {
         // For real payment methods, proceed with Stripe
         paymentIntent = await StripeService.createPaymentIntent(
           transaction.amount * 100, // Convert to cents
@@ -536,7 +544,7 @@ class WalletService {
           payerWallet.stripeCustomerId,
           paymentMethodId
         );
-      }
+        //}
 
       transaction.stripePaymentIntentId = paymentIntent.id;
       await transaction.save();
@@ -566,20 +574,20 @@ class WalletService {
       }
 
       let paymentIntent;
-      if (STRIPE_TEST_PAYMENT_METHODS.has(paymentMethodId)) {
-        // For test payment methods, we'll simulate a successful confirmation
-        paymentIntent = {
-          id: paymentIntentId,
-          status: "succeeded"
-        };
-        logger.info(`Simulated QR payment confirmation for test payment method: ${JSON.stringify(paymentIntent)}`);
-      } else {
+      // if (STRIPE_TEST_PAYMENT_METHODS.has(paymentMethodId)) {
+      //   // For test payment methods, we'll simulate a successful confirmation
+      //   paymentIntent = {
+      //     id: paymentIntentId,
+      //     status: "succeeded"
+      //   };
+      //   logger.info(`Simulated QR payment confirmation for test payment method: ${JSON.stringify(paymentIntent)}`);
+      // } else {
         // For real payment methods, proceed with Stripe
         paymentIntent = await StripeService.confirmPaymentIntent(
           paymentIntentId,
           paymentMethodId
         );
-      }
+        //}
 
       if (paymentIntent.status === "succeeded") {
         const transaction = await Transaction.findOne({
